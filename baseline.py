@@ -9,6 +9,8 @@ from geopy.geocoders import Nominatim
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor
 
 from sklearn import preprocessing
+from sklearn.decomposition import TruncatedSVD, NMF, PCA
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import StratifiedKFold
@@ -21,6 +23,45 @@ plt.rcParams["font.family"] = "IPAexGothic"
 
 N_SPLITS    = 5
 RANDOM_SEED = 72
+
+
+# text の基本的な情報をgetする関数
+def basic_text_features_transformer(input_df, column, cleansing_hero=None, name=''):
+    input_df[column] = input_df[column].astype(str)
+    _df = pd.DataFrame()
+    _df[column + name + '_num_chars']             = input_df[column].apply(len)
+    _df[column + name + '_num_exclamation_marks'] = input_df[column].apply(lambda x: x.count('!'))
+    _df[column + name + '_num_question_marks']    = input_df[column].apply(lambda x: x.count('?'))
+    _df[column + name + '_num_punctuation']       = input_df[column].apply(lambda x: sum(x.count(w) for w in '.,;:'))
+    _df[column + name + '_num_symbols']           = input_df[column].apply(lambda x: sum(x.count(w) for w in '*&$%'))
+    _df[column + name + '_num_words']             = input_df[column].apply(lambda x: len(x.split()))
+    _df[column + name + '_num_unique_words']      = input_df[column].apply(lambda x: len(set(w for w in x.split())))
+    _df[column + name + '_words_vs_unique']       = _df[column + name + '_num_unique_words'] / _df[column + name + '_num_words']
+    _df[column + name + '_words_vs_chars']        = _df[column + name + '_num_words'] / _df[column + name + '_num_chars']
+    return _df
+
+# カウントベースの text vector をgetする関数 
+def text_vectorizer(input_df, 
+                    text_columns,
+                    cleansing_hero=None,
+                    vectorizer=CountVectorizer(),
+                    transformer=TruncatedSVD(n_components=128),
+                    name='count_svd'):
+    
+    output_df = pd.DataFrame()
+    output_df[text_columns] = input_df[text_columns].astype(str).fillna('missing')
+    features = []
+    for c in text_columns:
+        if cleansing_hero is not None:
+            output_df[c] = cleansing_hero(output_df, c)
+
+        sentence = vectorizer.fit_transform(output_df[c])
+        feature = transformer.fit_transform(sentence)
+        num_p = feature.shape[1]
+        feature = pd.DataFrame(feature, columns=[name+str(num_p) + f'_{i:03}' for i in range(num_p)])
+        features.append(feature)
+    output_df = pd.concat(features, axis=1)
+    return output_df
 
 def make_prediction(train, y, fold, model, model_name=None, logarithmic=False):
     oof_pred = np.zeros_like(y, dtype=np.float)
@@ -150,6 +191,68 @@ train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
 
 # 収集に際して資金提供などを行った情報があるかどうか
 train_test['exist_acquisition_credit_line'] = np.where(train_test['acquisition_credit_line'].isnull()==False, 1, 0)
+
+# 主な製作者にたいしてagg
+group = train_test.groupby('principal_maker')
+
+agg_df = pd.concat([
+    group.size().rename('n_principal_maker'), # 著者が何回出てくるか
+    group['sub_title'].nunique(), # 著者ごとに何種類の sub_title を持っているか
+    group['dating_sorting_date'].agg(['min', 'max', 'mean']).add_prefix('dating_sorting_date_grpby_principal_maker_'), # 著者ごとに描いた年度の最小・最大・平均
+], axis=1)
+train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
+
+# # 作者ごとに、それまでの年度の絵で獲得した合計のいいね数
+# sorted_group = train.sort_values('dating_year_late').groupby('principal_maker')['likes'].cumsum()
+# print(sorted_group)
+# exit()
+
+for c in ['title','long_title','more_title']:
+    print(c)
+    dfs = []
+
+    _df = basic_text_features_transformer(train_test, c, cleansing_hero=None, name='')
+    dfs.append(_df)
+
+    _df = text_vectorizer(train_test,
+                                [c],
+                                cleansing_hero=None,
+                                vectorizer=CountVectorizer(),
+                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+                                name=f'{c}_countvec_sdv'
+                                )
+    dfs.append(_df)
+
+    _df = text_vectorizer(train_test,
+                                [c],
+                                cleansing_hero=None,
+                                vectorizer=TfidfVectorizer(),
+                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+                                name=f'{c}_tfidf_sdv'
+                                )
+    dfs.append(_df)
+
+    output_df = pd.concat(dfs, axis=1)
+    train_test = pd.concat([train_test, output_df], axis=1)
+
+# def create_string_length_feature(input_df): # NOTE: train_testだとエラー出るのでなし
+#     out_df = pd.DataFrame()
+
+#     str_columns = [
+#         'title', 
+#         'long_title',
+#         'sub_title',
+#         'more_title'
+#         # and more
+#     ]
+
+#     for c in str_columns:
+#         out_df[c] = input_df[c].str.len()
+
+#     return out_df.add_prefix('StringLength__')
+
+# tmp = create_string_length_feature(train_test)
+
 
 # 言語判定特徴
 model = load_model('./bin/lid.176.bin')
