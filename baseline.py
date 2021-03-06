@@ -1,8 +1,11 @@
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 import lightgbm as lgbm
 import seaborn as sns
 import matplotlib.pyplot as plt
+from fasttext import load_model
+from geopy.geocoders import Nominatim
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor
 
 from sklearn import preprocessing
@@ -64,8 +67,21 @@ train = pd.read_csv('./features/train.csv')
 test  = pd.read_csv('./features/test.csv')
 print(train.shape, test.shape) # (12026, 19) (12008, 18)
 
+production_place   = pd.read_csv('./features/production_place.csv').rename(columns={'name': 'place_name'})
+production_country = pd.read_csv('./features/production_country.csv') # 作成した特徴量
+
 train_test = pd.concat([train, test], ignore_index=True)
 
+# 'object_id'の出現回数を特徴量へ
+place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
+train_test = pd.merge(train_test, place_counts, on='object_id', how='left')
+
+# クロス集計表にデータを成型してマージ
+cross_place   = pd.crosstab(production_place['object_id'], production_place['place_name'])
+cross_country = pd.crosstab(production_country['object_id'], production_country['country_name'])
+
+# train_test = pd.merge(train_test, cross_place, on='object_id', how='left') # ?がきついっぽいのでマージなしで
+train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
 
 # for c in train.columns:
 #     print(c, len(set(train[c])))
@@ -135,6 +151,40 @@ train_test = pd.concat([train, test], ignore_index=True)
 # 収集に際して資金提供などを行った情報があるかどうか
 train_test['exist_acquisition_credit_line'] = np.where(train_test['acquisition_credit_line'].isnull()==False, 1, 0)
 
+# 言語判定特徴
+model = load_model('./bin/lid.176.bin')
+
+for c in ['title', 'description', 'long_title']:
+    train_test[f'{c}_lang'] = train_test[c].fillna('').map(
+        lambda x: model.predict(x.replace('\n', ''))[0][0].split('_')[-1])
+
+
+# # geopyによる地名 -> 国名の変換 重めなので作ってセーブしておく
+# def place2country(address):
+#     geolocator = Nominatim(user_agent='sample', timeout=200)
+#     loc = geolocator.geocode(address, language='en')
+#     coordinates = (loc.latitude, loc.longitude)
+#     location = geolocator.reverse(coordinates, language='en')
+#     country = location.raw['address']['country']
+#     return country
+
+# country_dict = {}
+# for place in tqdm(set(production_place['name'])):
+#     try:
+#         country_dict[place] = place2country(place)
+#     except:
+#         # 国名を取得できない場合はnan
+#         country_dict[place] = np.nan
+
+# production_place['country_name'] = production_place['name'].map(country_dict)
+
+# out_df = pd.DataFrame({
+#     'object_id': production_place['object_id'],
+#     'country_name': production_place['country_name']
+# })
+# out_df.to_csv('./features/production_country.csv', index=False)
+
+# print(production_place)
 
 
 # 各種エンコーディング
@@ -170,7 +220,7 @@ def target_encoding(train, test, target_col, y_col):
     train[f'TE_{target_col}'] = tmp
 
 
-cat_cols = ['principal_maker', 'principal_or_first_maker','copyright_holder','acquisition_method','acquisition_credit_line']
+cat_cols = ['principal_maker','principal_or_first_maker','copyright_holder','acquisition_method','acquisition_credit_line','title_lang','description_lang','long_title_lang']
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
     train_test = label_encoding(train_test, c)
