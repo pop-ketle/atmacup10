@@ -231,6 +231,13 @@ train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
 # dating_year_late               31
 # dtype: int64
 
+# 年代でビニングしてみる(時期、世紀)
+_df = pd.DataFrame({
+    'period': pd.cut(train_test['dating_sorting_date'], [1250, 1400, 1600, 1900, 2100], labels=False),
+    'century': pd.cut(train_test['dating_sorting_date'], [1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000, 2100], labels=False)
+})
+train_test = pd.concat([train_test, _df], axis=1)
+
 # 収集に際して資金提供などを行った情報があるかどうか
 train_test['exist_acquisition_credit_line'] = np.where(train_test['acquisition_credit_line'].isnull()==False, 1, 0)
 
@@ -359,7 +366,7 @@ def target_encoding(train, test, target_col, y_col):
     train[f'TE_{target_col}'] = tmp
 
 
-cat_cols = ['principal_maker','principal_or_first_maker','copyright_holder','acquisition_method','acquisition_credit_line','title_lang','description_lang','long_title_lang']
+cat_cols = ['principal_maker','principal_or_first_maker','copyright_holder','acquisition_method','acquisition_credit_line','title_lang','description_lang','long_title_lang','period','century']
 
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
@@ -471,11 +478,39 @@ fig.tight_layout()
 plt.savefig(f'./figs/cv:{score}_feature_importance.png')
 plt.show()
 
+# feature_importance_df = pd.DataFrame()
+# for i, model in enumerate(lgbm_models):
+#     _df = pd.DataFrame()
+#     _df['feature_importance'] = model.feature_importances_
+#     _df['column'] = train.columns
+#     _df['fold'] = i + 1
+#     feature_importance_df = pd.concat([feature_importance_df, _df], 
+#                                         axis=0, ignore_index=True)
+
+# order = feature_importance_df.groupby('column')\
+#     .sum()[['feature_importance']]\
+#     .sort_values('feature_importance', ascending=False).index[:50]
+
+# fig, ax = plt.subplots(figsize=(8, max(6, len(order) * .25)))
+# sns.boxenplot(data=feature_importance_df, 
+#                 x='feature_importance', 
+#                 y='column', 
+#                 order=order, 
+#                 ax=ax, 
+#                 palette='viridis', 
+#                 orient='h')
+# ax.tick_params(axis='x', rotation=90)
+# ax.set_title('Importance')
+# ax.grid()
+# fig.tight_layout()
+# plt.savefig(f'./figs/cv:{score}_feature_importance.png')
+# plt.show()
+
+
 # 予測値の可視化
 fig, ax = plt.subplots(figsize=(8, 8))
-sns.distplot(np.log1p(pred), label='Test Predict')
-sns.distplot(lgbm_oof_pred, label='LGBM Out Of Fold')
-# sns.distplot(cat_oof_pred, label='CAT Out Of Fold')
+sns.histplot(np.log1p(pred), label='Test Predict', ax=ax, color='black')
+sns.histplot(lgbm_oof_pred, label='LGBM Out Of Fold', ax=ax, color='C1')
 ax.legend()
 ax.grid()
 plt.savefig(f'./figs/cv:{score}_histogram.png')
