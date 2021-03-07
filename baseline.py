@@ -197,7 +197,7 @@ group = train_test.groupby('principal_maker')
 
 agg_df = pd.concat([
     group.size().rename('n_principal_maker'), # 著者が何回出てくるか
-    group['sub_title'].nunique(), # 著者ごとに何種類の sub_title を持っているか
+    group['sub_title'].nunique().rename('nunique_sub_title'), # 著者ごとに何種類の sub_title を持っているか
     group['dating_sorting_date'].agg(['min', 'max', 'mean']).add_prefix('dating_sorting_date_grpby_principal_maker_'), # 著者ごとに描いた年度の最小・最大・平均
 ], axis=1)
 train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
@@ -207,7 +207,7 @@ train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
 # print(sorted_group)
 # exit()
 
-for c in ['title','long_title','more_title']:
+for c in ['title','sub_title','long_title','more_title']:
     print(c)
     dfs = []
 
@@ -235,24 +235,18 @@ for c in ['title','long_title','more_title']:
     output_df = pd.concat(dfs, axis=1)
     train_test = pd.concat([train_test, output_df], axis=1)
 
-# def create_string_length_feature(input_df): # NOTE: train_testだとエラー出るのでなし
-#     out_df = pd.DataFrame()
+# sub_titleから作品のサイズを抽出して単位をmmに統一する
+for axis in ['h', 'w', 't', 'd']:
+    column_name = f'size_{axis}'
+    size_info = train_test['sub_title'].str.extract(r'{} (\d*|\d*\.\d*)(cm|mm)'.format(axis)) # 正規表現を使ってサイズを抽出
+    size_info = size_info.rename(columns={0: column_name, 1: 'unit'})
+    size_info[column_name] = size_info[column_name].replace('', np.nan).astype(float) # dtypeがobjectになってるのでfloatに直す
+    size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
+    train_test[column_name] = size_info[column_name] # trainにくっつける
 
-#     str_columns = [
-#         'title', 
-#         'long_title',
-#         'sub_title',
-#         'more_title'
-#         # and more
-#     ]
-
-#     for c in str_columns:
-#         out_df[c] = input_df[c].str.len()
-
-#     return out_df.add_prefix('StringLength__')
-
-# tmp = create_string_length_feature(train_test)
-
+# # NOTE: 変なもの( h 166mm × w 78/54mm )が混じってて例外処理がいるけどとりあえず延期で
+# print(train_test.iloc[18194][['sub_title', 'size_h', 'size_w', 'size_t', 'size_d']])
+# exit()
 
 # 言語判定特徴
 model = load_model('./bin/lid.176.bin')
