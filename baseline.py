@@ -114,10 +114,24 @@ palette_df = pd.read_csv('./features/palette.csv')
 historical_person_df = pd.read_csv('./features/historical_person.csv')
 object_collection_df = pd.read_csv('./features/object_collection.csv')
 
+technique_df = pd.read_csv('./features/technique.csv')
+
 production_place   = pd.read_csv('./features/production_place.csv').rename(columns={'name': 'place_name'})
 production_country = pd.read_csv('./features/production_country.csv') # 作成した特徴量
 
 train_test = pd.concat([train, test], ignore_index=True)
+
+
+###############################
+
+# 色の情報を特徴量へ
+_df = palette_df.groupby('object_id')['ratio'].agg(['min','max']).add_prefix('color_ratio_')
+train_test = pd.merge(train_test, _df, on='object_id', how='left')
+
+for c in ['color_r','color_g','color_b']:
+    _df = palette_df.groupby('object_id')[c].agg(['min','max','mean','std']).add_prefix(f'{c}_')
+    _df[f'{c}_max-min'] = _df[f'{c}_max'] - _df[f'{c}_min']
+    train_test = pd.merge(train_test, _df, on='object_id', how='left')
 
 # 作品がどのような形式であるか
 # クロス集計表にデータを成型してマージ
@@ -135,6 +149,11 @@ train_test['exist_historical_person'] = np.where(train_test['n_historical_person
 # cross_historical_person = pd.crosstab(historical_person_df['object_id'], historical_person_df['name']).add_prefix('historical_person=')
 # train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
 
+# NOTE: 若干CV落ちたのでパス
+# # どのような技法で描かれたか
+# # クロス集計表にデータを成型してマージ
+# cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
+# train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
 
 # 'object_id'の出現回数を特徴量へ
 place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
@@ -433,7 +452,6 @@ sub_df.to_csv(f'./submissions/cv:{score}.csv', index=False)
 # feature importanceの可視化
 feature_importance_df = pd.DataFrame()
 for i, model in enumerate(lgbm_models):
-    if i%2==0: continue
     _df = pd.DataFrame()
     _df['feature_importance'] = model.feature_importances_
     # _df['column'] = train.drop(obj_col, axis=1).columns
