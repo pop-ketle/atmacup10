@@ -108,10 +108,33 @@ train = pd.read_csv('./features/train.csv')
 test  = pd.read_csv('./features/test.csv')
 print(train.shape, test.shape) # (12026, 19) (12008, 18)
 
+color_df   = pd.read_csv('./features/color.csv')
+palette_df = pd.read_csv('./features/palette.csv')
+
+historical_person_df = pd.read_csv('./features/historical_person.csv')
+object_collection_df = pd.read_csv('./features/object_collection.csv')
+
 production_place   = pd.read_csv('./features/production_place.csv').rename(columns={'name': 'place_name'})
 production_country = pd.read_csv('./features/production_country.csv') # 作成した特徴量
 
 train_test = pd.concat([train, test], ignore_index=True)
+
+# 作品がどのような形式であるか
+# クロス集計表にデータを成型してマージ
+cross_object_type = pd.crosstab(object_collection_df['object_id'], object_collection_df['name']).add_prefix('object_type=')
+train_test = pd.merge(train_test, cross_object_type, on='object_id', how='left')
+
+# 作品にhistorical_personが写っているかどうか、その人数
+_df = historical_person_df['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_historical_person'})
+train_test = pd.merge(train_test, _df, on='object_id', how='left')
+train_test['n_historical_person'] = train_test['n_historical_person'].fillna(0)
+
+train_test['exist_historical_person'] = np.where(train_test['n_historical_person']>=1, 1, 0)
+
+# # クロス集計表にデータを成型してマージ
+# cross_historical_person = pd.crosstab(historical_person_df['object_id'], historical_person_df['name']).add_prefix('historical_person=')
+# train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
+
 
 # 'object_id'の出現回数を特徴量へ
 place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
@@ -318,6 +341,7 @@ def target_encoding(train, test, target_col, y_col):
 
 
 cat_cols = ['principal_maker','principal_or_first_maker','copyright_holder','acquisition_method','acquisition_credit_line','title_lang','description_lang','long_title_lang']
+
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
     train_test = label_encoding(train_test, c)
