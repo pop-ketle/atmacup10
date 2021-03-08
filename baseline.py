@@ -1,3 +1,4 @@
+import colorsys
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -133,6 +134,17 @@ for c in ['color_r','color_g','color_b']:
     _df[f'{c}_max-min'] = _df[f'{c}_max'] - _df[f'{c}_min']
     train_test = pd.merge(train_test, _df, on='object_id', how='left')
 
+# print(palette_df)
+
+# # palette_df['rgb'] = str(palette_df['color_r']) + str(palette_df['color_g'])
+# _df = palette_df.apply(lambda x: colorsys.rgb_to_hsv(x['color_r'], x['color_g'], x['color_b']))
+# print(_df)
+# # print(palette_df)
+# # size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
+
+
+# exit()
+
 # 作品がどのような形式であるか
 # クロス集計表にデータを成型してマージ
 cross_object_type = pd.crosstab(object_collection_df['object_id'], object_collection_df['name']).add_prefix('object_type=')
@@ -165,6 +177,17 @@ cross_country = pd.crosstab(production_country['object_id'], production_country[
 
 # train_test = pd.merge(train_test, cross_place, on='object_id', how='left') # ?がきついっぽいのでマージなしで
 train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
+
+# # acquisition_methodに応じてフラグ NOTE: label encodingしてるからいらないんじゃ...
+# dfs = []
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='transfer', 1, 0), columns=['acquisition_method_is_transfer']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='unknowwn', 1, 0), columns=['acquisition_method_is_unknowwn']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='bequest', 1, 0), columns=['acquisition_methodis_bequest']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='loan', 1, 0), columns=['acquisition_methodis_loan']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='nationalization', 1, 0), columns=['acquisition_methodis_nationalization']))
+# _df = pd.concat(dfs, axis=1)
+# train_test = pd.concat([train_test, _df], axis=1)
+
 
 # for c in train.columns:
 #     print(c, len(set(train[c])))
@@ -248,6 +271,7 @@ agg_df = pd.concat([
     group.size().rename('n_principal_maker'), # 著者が何回出てくるか
     group['sub_title'].nunique().rename('nunique_sub_title'), # 著者ごとに何種類の sub_title を持っているか
     group['dating_sorting_date'].agg(['min', 'max', 'mean']).add_prefix('dating_sorting_date_grpby_principal_maker_'), # 著者ごとに描いた年度の最小・最大・平均
+    group['likes'].agg(['min', 'max', 'mean']).add_prefix('likes_grpby_principal_maker_')
 ], axis=1)
 train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
 
