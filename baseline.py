@@ -10,6 +10,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from fasttext import load_model
 from geopy.geocoders import Nominatim
+from gensim.models import word2vec, KeyedVectors
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor
 from mlxtend.frequent_patterns import apriori
 from mlxtend.frequent_patterns import association_rules
@@ -300,6 +301,59 @@ train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
 # _df = pd.concat(dfs, axis=1)
 # train_test = pd.concat([train_test, _df], axis=1)
 
+
+# material.csv, technique.csv, collection.csvの連なりを文章として見立ててWord2Vec
+mat_col = pd.concat([material_df, object_collection_df], axis=0).reset_index(drop=True)
+mat_tec = pd.concat([material_df, technique_df], axis=0).reset_index(drop=True)
+col_tec = pd.concat([object_collection_df, technique_df], axis=0).reset_index(drop=True)
+mat_col_tec = pd.concat([material_df, object_collection_df, technique_df], axis=0).reset_index(drop=True)
+
+# 単語ベクトル表現の次元数 NOTE: 元の語彙数をベースに適当に決めました
+model_size = {
+    "material": 20,
+    "technique": 8,
+    "collection": 3,
+    "material_collection": 20,
+    "material_technique": 20,
+    "collection_technique": 10,
+    "material_collection_technique": 25
+}
+n_iter = 100
+
+w2v_dfs = []
+for df, df_name in zip(
+        [
+            material_df, object_collection_df, technique_df,
+            mat_col, mat_tec, col_tec, mat_col_tec
+        ], [
+            "material", "collection", "technique",
+            "material_collection",
+            "material_technique",
+            "collection_technique",
+            "material_collection_technique"
+        ]):
+    df_group = df.groupby("object_id")["name"].apply(list).reset_index()
+    # Word2Vecの学習
+    w2v_model = word2vec.Word2Vec(df_group["name"].values.tolist(),
+                                  size=model_size[df_name],
+                                  min_count=1,
+                                  window=1,
+                                  iter=n_iter)
+
+    # 各文章ごとにそれぞれの単語をベクトル表現に直し、平均をとって文章ベクトルにする
+    sentence_vectors = df_group["name"].apply(
+        lambda x: np.mean([w2v_model.wv[e] for e in x], axis=0))
+    sentence_vectors = np.vstack([x for x in sentence_vectors])
+    sentence_vector_df = pd.DataFrame(sentence_vectors,
+                                      columns=[f"{df_name}_w2v_{i}"
+                                               for i in range(model_size[df_name])])
+    sentence_vector_df.index = df_group["object_id"]
+    w2v_dfs.append(sentence_vector_df)
+
+for w2v_df in w2v_dfs:
+    train_test = pd.merge(train_test, w2v_df, on='object_id', how='left')
+
+
 # materials をまとめて数を減らした上で結合
 _df = material_df['name'].apply(lambda x: materials_dict[x])
 _df    = pd.concat([material_df['object_id'], _df], axis=1).rename(columns={'name': 'material'})
@@ -342,7 +396,7 @@ train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
 # print(sorted_group)
 # exit()
 
-for c in ['title','sub_title','long_title','more_title']:
+for c in ['title','description','sub_title','long_title','more_title']:
     print(c)
     dfs = []
 
