@@ -1,13 +1,18 @@
+import yaml
+import nltk
 import colorsys
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+import texthero as hero
 import lightgbm as lgbm
 import seaborn as sns
 import matplotlib.pyplot as plt
 from fasttext import load_model
 from geopy.geocoders import Nominatim
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor
+from mlxtend.frequent_patterns import apriori
+from mlxtend.frequent_patterns import association_rules
 
 from sklearn import preprocessing
 from sklearn.decomposition import TruncatedSVD, NMF, PCA
@@ -20,11 +25,32 @@ from sklearn.model_selection import StratifiedKFold
 import warnings
 warnings.simplefilter('ignore')
 
+nltk.download('stopwords')
+# 英語とオランダ語を stopword として指定
+custom_stopwords = nltk.corpus.stopwords.words('dutch') + nltk.corpus.stopwords.words('english')
+
 plt.rcParams["font.family"] = "IPAexGothic"
 
 N_SPLITS    = 5
 RANDOM_SEED = 72
 
+
+def cleansing_hero_only_text(input_df, text_col):
+    ## get only text (remove html tags, punctuation & digits)
+    custom_pipeline = [
+        hero.preprocessing.fillna,
+        hero.preprocessing.remove_html_tags,
+        hero.preprocessing.lowercase,
+        hero.preprocessing.remove_digits,
+        hero.preprocessing.remove_punctuation,
+        hero.preprocessing.remove_diacritics,
+        hero.preprocessing.remove_stopwords,
+        hero.preprocessing.remove_whitespace,
+        hero.preprocessing.stem,
+        lambda x: hero.preprocessing.remove_stopwords(x, stopwords=custom_stopwords)
+    ]
+    texts = hero.clean(input_df[text_col], custom_pipeline)
+    return texts
 
 # text の基本的な情報をgetする関数
 def basic_text_features_transformer(input_df, column, cleansing_hero=None, name=''):
@@ -117,77 +143,22 @@ object_collection_df = pd.read_csv('./features/object_collection.csv')
 
 technique_df = pd.read_csv('./features/technique.csv')
 
+material_df = pd.read_csv('./features/material.csv')
+
+with open('./features/materials_converter.yml') as f:
+    materials_dict = yaml.safe_load(f.read())
+
+# materials_dictの対応関係を逆にする
+new_dict = dict()
+for key, value in materials_dict.items():
+    for v in value:
+        new_dict[v] = key
+materials_dict = new_dict
+
 production_place   = pd.read_csv('./features/production_place.csv').rename(columns={'name': 'place_name'})
 production_country = pd.read_csv('./features/production_country.csv') # 作成した特徴量
 
 train_test = pd.concat([train, test], ignore_index=True)
-
-
-###############################
-
-# 色の情報を特徴量へ
-_df = palette_df.groupby('object_id')['ratio'].agg(['min','max']).add_prefix('color_ratio_')
-train_test = pd.merge(train_test, _df, on='object_id', how='left')
-
-for c in ['color_r','color_g','color_b']:
-    _df = palette_df.groupby('object_id')[c].agg(['min','max','mean','std']).add_prefix(f'{c}_')
-    _df[f'{c}_max-min'] = _df[f'{c}_max'] - _df[f'{c}_min']
-    train_test = pd.merge(train_test, _df, on='object_id', how='left')
-
-# print(palette_df)
-
-# # palette_df['rgb'] = str(palette_df['color_r']) + str(palette_df['color_g'])
-# _df = palette_df.apply(lambda x: colorsys.rgb_to_hsv(x['color_r'], x['color_g'], x['color_b']))
-# print(_df)
-# # print(palette_df)
-# # size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
-
-
-# exit()
-
-# 作品がどのような形式であるか
-# クロス集計表にデータを成型してマージ
-cross_object_type = pd.crosstab(object_collection_df['object_id'], object_collection_df['name']).add_prefix('object_type=')
-train_test = pd.merge(train_test, cross_object_type, on='object_id', how='left')
-
-# 作品にhistorical_personが写っているかどうか、その人数
-_df = historical_person_df['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_historical_person'})
-train_test = pd.merge(train_test, _df, on='object_id', how='left')
-train_test['n_historical_person'] = train_test['n_historical_person'].fillna(0)
-
-train_test['exist_historical_person'] = np.where(train_test['n_historical_person']>=1, 1, 0)
-
-# # クロス集計表にデータを成型してマージ
-# cross_historical_person = pd.crosstab(historical_person_df['object_id'], historical_person_df['name']).add_prefix('historical_person=')
-# train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
-
-# NOTE: 若干CV落ちたのでパス
-# # どのような技法で描かれたか
-# # クロス集計表にデータを成型してマージ
-# cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
-# train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
-
-# 'object_id'の出現回数を特徴量へ
-place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
-train_test = pd.merge(train_test, place_counts, on='object_id', how='left')
-
-# クロス集計表にデータを成型してマージ
-cross_place   = pd.crosstab(production_place['object_id'], production_place['place_name'])
-cross_country = pd.crosstab(production_country['object_id'], production_country['country_name'])
-
-# train_test = pd.merge(train_test, cross_place, on='object_id', how='left') # ?がきついっぽいのでマージなしで
-train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
-
-# # acquisition_methodに応じてフラグ NOTE: label encodingしてるからいらないんじゃ...
-# dfs = []
-# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='transfer', 1, 0), columns=['acquisition_method_is_transfer']))
-# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='unknowwn', 1, 0), columns=['acquisition_method_is_unknowwn']))
-# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='bequest', 1, 0), columns=['acquisition_methodis_bequest']))
-# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='loan', 1, 0), columns=['acquisition_methodis_loan']))
-# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='nationalization', 1, 0), columns=['acquisition_methodis_nationalization']))
-# _df = pd.concat(dfs, axis=1)
-# train_test = pd.concat([train_test, _df], axis=1)
-
 
 # for c in train.columns:
 #     print(c, len(set(train[c])))
@@ -254,6 +225,97 @@ train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
 # dating_year_late               31
 # dtype: int64
 
+
+###############################
+
+# 色の情報を特徴量へ
+_df = palette_df.groupby('object_id')['ratio'].agg(['min','max']).add_prefix('color_ratio_')
+train_test = pd.merge(train_test, _df, on='object_id', how='left')
+
+for c in ['color_r','color_g','color_b']:
+    _df = palette_df.groupby('object_id')[c].agg(['min','max','mean','std']).add_prefix(f'{c}_')
+    _df[f'{c}_max-min'] = _df[f'{c}_max'] - _df[f'{c}_min']
+    train_test = pd.merge(train_test, _df, on='object_id', how='left')
+
+# print(palette_df)
+
+# # palette_df['rgb'] = str(palette_df['color_r']) + str(palette_df['color_g'])
+# _df = palette_df.apply(lambda x: colorsys.rgb_to_hsv(x['color_r'], x['color_g'], x['color_b']))
+# print(_df)
+# # print(palette_df)
+# # size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
+
+
+# exit()
+
+# 作品がどのような形式であるか
+# クロス集計表にデータを成型してマージ
+cross_object_type = pd.crosstab(object_collection_df['object_id'], object_collection_df['name']).add_prefix('object_type=')
+train_test = pd.merge(train_test, cross_object_type, on='object_id', how='left')
+
+# 作品にhistorical_personが写っているかどうか、その人数
+_df = historical_person_df['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_historical_person'})
+train_test = pd.merge(train_test, _df, on='object_id', how='left')
+train_test['n_historical_person'] = train_test['n_historical_person'].fillna(0)
+
+train_test['exist_historical_person'] = np.where(train_test['n_historical_person']>=1, 1, 0)
+
+# NOTE: lightgbm.basic.LightGBMError: Do not support special JSON characters in feature name.
+# # クロス集計表にデータを成型してマージ
+# vc = historical_person_df['name'].value_counts()
+
+# # 出現回数30以上に絞る
+# use_names = vc[vc > 30].index
+
+# # isin で 30 回以上でてくるようなレコードに絞り込んでから corsstab を行なう
+# idx = historical_person_df['name'].isin(use_names)
+# _use_df = historical_person_df[idx].reset_index(drop=True)
+# cross_historical_person = pd.crosstab(_use_df['object_id'], _use_df['name']).add_prefix('historical_person=')
+# train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
+
+# NOTE: 若干CV落ちたのでパス
+# # どのような技法で描かれたか
+# # クロス集計表にデータを成型してマージ
+# cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
+# train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
+
+# 'object_id'の出現回数を特徴量へ
+place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
+train_test = pd.merge(train_test, place_counts, on='object_id', how='left')
+
+# クロス集計表にデータを成型してマージ
+cross_place   = pd.crosstab(production_place['object_id'], production_place['place_name'])
+cross_country = pd.crosstab(production_country['object_id'], production_country['country_name'])
+
+# train_test = pd.merge(train_test, cross_place, on='object_id', how='left') # ?がきついっぽいのでマージなしで
+train_test = pd.merge(train_test, cross_country, on='object_id', how='left')
+
+# # acquisition_methodに応じてフラグ NOTE: label encodingしてるからいらないんじゃ...
+# dfs = []
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='transfer', 1, 0), columns=['acquisition_method_is_transfer']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='unknowwn', 1, 0), columns=['acquisition_method_is_unknowwn']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='bequest', 1, 0), columns=['acquisition_methodis_bequest']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='loan', 1, 0), columns=['acquisition_methodis_loan']))
+# dfs.append(pd.DataFrame(np.where(train_test['acquisition_method']=='nationalization', 1, 0), columns=['acquisition_methodis_nationalization']))
+# _df = pd.concat(dfs, axis=1)
+# train_test = pd.concat([train_test, _df], axis=1)
+
+# materials をまとめて数を減らした上で結合
+_df = material_df['name'].apply(lambda x: materials_dict[x])
+_df    = pd.concat([material_df['object_id'], _df], axis=1).rename(columns={'name': 'material'})
+material_df    = pd.concat([material_df, _df['material']], axis=1)
+cross_material = pd.crosstab(material_df['object_id'], material_df['material']).add_prefix('material=')
+train_test = pd.merge(train_test, cross_material, on='object_id', how='left')
+
+# NOTE: これをどう活かせばいいのかよくわからない
+# cross_material = pd.crosstab(material_df['object_id'], material_df['name'])
+# freq_material_df = apriori(cross_material, min_support=.005, use_colnames=True).sort_values('support', ascending=False)
+# print(freq_material_df)
+# association_rules(freq_material_df, metric='lift').sort_values('lift', ascending=False)
+# sns.clustermap(cross_material.corr(), cmap='Blues')
+# plt.show()
+# exit()
+
 # 年代でビニングしてみる(時期、世紀)
 _df = pd.DataFrame({
     'period': pd.cut(train_test['dating_sorting_date'], [1250, 1400, 1600, 1900, 2100], labels=False),
@@ -271,7 +333,7 @@ agg_df = pd.concat([
     group.size().rename('n_principal_maker'), # 著者が何回出てくるか
     group['sub_title'].nunique().rename('nunique_sub_title'), # 著者ごとに何種類の sub_title を持っているか
     group['dating_sorting_date'].agg(['min', 'max', 'mean']).add_prefix('dating_sorting_date_grpby_principal_maker_'), # 著者ごとに描いた年度の最小・最大・平均
-    group['likes'].agg(['min', 'max', 'mean']).add_prefix('likes_grpby_principal_maker_')
+    # group['likes'].agg(['min', 'max', 'mean']).add_prefix('likes_grpby_principal_maker_')
 ], axis=1)
 train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
 
@@ -289,7 +351,7 @@ for c in ['title','sub_title','long_title','more_title']:
 
     _df = text_vectorizer(train_test,
                                 [c],
-                                cleansing_hero=None,
+                                cleansing_hero=cleansing_hero_only_text,
                                 vectorizer=CountVectorizer(),
                                 transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
                                 name=f'{c}_countvec_sdv'
@@ -298,7 +360,7 @@ for c in ['title','sub_title','long_title','more_title']:
 
     _df = text_vectorizer(train_test,
                                 [c],
-                                cleansing_hero=None,
+                                cleansing_hero=cleansing_hero_only_text,
                                 vectorizer=TfidfVectorizer(),
                                 transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
                                 name=f'{c}_tfidf_sdv'
@@ -418,10 +480,16 @@ print(train.shape, y.shape, test.shape)
 lgbm_params = {
     'objective': 'rmse', # 目的関数. これの意味で最小となるようなパラメータを探します. 
     'learning_rate': 0.1, # 学習率. 小さいほどなめらかな決定境界が作られて性能向上に繋がる場合が多いです、がそれだけ木を作るため学習に時間がかかります
+    'reg_lambda': 1., # L2 Reguralization 
+    'reg_alpha': .1, # こちらは L1
     'max_depth': 6, # 木の深さ. 深い木を許容するほどより複雑な交互作用を考慮するようになります
     'n_estimators': 10000, # 木の最大数. early_stopping という枠組みで木の数は制御されるようにしていますのでとても大きい値を指定しておきます.
     'colsample_bytree': 0.5, # 木を作る際に考慮する特徴量の割合. 1以下を指定すると特徴をランダムに欠落させます。小さくすることで, まんべんなく特徴を使うという効果があります.
-    'importance_type': 'gain' # 特徴重要度計算のロジック(後述)
+    # bagging の頻度と割合
+    'subsample_freq': 3,
+    'subsample': .9,
+    'importance_type': 'gain', # 特徴重要度計算のロジック(後述)
+    'random_state': RANDOM_SEED,
 }
 
 skf = StratifiedKFold(n_splits=N_SPLITS, random_state=RANDOM_SEED, shuffle=True)
