@@ -134,7 +134,6 @@ def make_prediction(train, y, fold, model, model_name=None, logarithmic=False):
 
 train = pd.read_csv('./features/train.csv')
 test  = pd.read_csv('./features/test.csv')
-print(train.shape, test.shape) # (12026, 19) (12008, 18)
 
 color_df   = pd.read_csv('./features/color.csv')
 palette_df = pd.read_csv('./features/palette.csv')
@@ -160,6 +159,16 @@ production_place   = pd.read_csv('./features/production_place.csv').rename(colum
 production_country = pd.read_csv('./features/production_country.csv') # 作成した特徴量
 
 train_test = pd.concat([train, test], ignore_index=True)
+print(train.shape, test.shape, train_test.shape) # (12026, 19) (12008, 18) (24034, 19)
+
+
+# text features
+for c in ['title', 'description', 'long_title']:
+    for name in ['en','nl','ex']:
+        _df = pd.read_csv(f'./features/texts_lang/{c}_{name}_feature.csv')
+        _df = _df.drop(['Unnamed: 0'], axis=1)
+        train_test = pd.merge(train_test, _df, on='object_id', how='left')
+print(train_test.shape)
 
 # for c in train.columns:
 #     print(c, len(set(train[c])))
@@ -230,24 +239,48 @@ train_test = pd.concat([train, test], ignore_index=True)
 ###############################
 
 # 色の情報を特徴量へ
+_df = palette_df.groupby('object_id').size()
+
 _df = palette_df.groupby('object_id')['ratio'].agg(['min','max']).add_prefix('color_ratio_')
 train_test = pd.merge(train_test, _df, on='object_id', how='left')
 
+# rgbごとに'min','max','mean','std','var','max-min'をとる
 for c in ['color_r','color_g','color_b']:
-    _df = palette_df.groupby('object_id')[c].agg(['min','max','mean','std']).add_prefix(f'{c}_')
+    _df = palette_df.groupby('object_id')[c].agg(['min','max','mean','std','var']).add_prefix(f'{c}_')
     _df[f'{c}_max-min'] = _df[f'{c}_max'] - _df[f'{c}_min']
     train_test = pd.merge(train_test, _df, on='object_id', how='left')
 
-# print(palette_df)
+# HSVに変換して、HSVごとに'min','max','mean','std','var','max-min'をとる
+palette_df['HSV'] = list(map(lambda r,g,b: list(colorsys.rgb_to_hsv(r,g,b)),
+                        palette_df['color_r'], palette_df['color_g'], palette_df['color_b']))
+palette_df['color_h'] = palette_df['HSV'].map(lambda x: x[0])
+palette_df['color_s'] = palette_df['HSV'].map(lambda x: x[1])
+palette_df['color_v'] = palette_df['HSV'].map(lambda x: x[2])
+palette_df = palette_df.drop(['HSV'], axis=1)
 
-# # palette_df['rgb'] = str(palette_df['color_r']) + str(palette_df['color_g'])
-# _df = palette_df.apply(lambda x: colorsys.rgb_to_hsv(x['color_r'], x['color_g'], x['color_b']))
-# print(_df)
-# # print(palette_df)
-# # size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
+for c in ['color_h','color_s','color_v']:
+    _df = palette_df.groupby('object_id')[c].agg(['min','max','mean','std','var']).add_prefix(f'{c}_')
+    _df[f'{c}_max-min'] = _df[f'{c}_max'] - _df[f'{c}_min']
+    train_test = pd.merge(train_test, _df, on='object_id', how='left')
 
+# ratio最大のものを取得
+max_palette = palette_df.groupby('object_id')['ratio'].max().reset_index()
+max_palette = pd.merge(max_palette, palette_df, on=['object_id','ratio'], how='left').rename(
+    columns={'ratio':'max_ratio', 'color_r':'max_palette_r', 'color_g':'max_palette_g','color_b':'max_palette_b',
+            'color_h':'max_palette_h', 'color_s':'max_palette_s','color_v':'max_palette_v'})
+max_palette = max_palette.loc[max_palette['object_id'].drop_duplicates().index.tolist()].reset_index()  # 同じidでmax ratioが同じものは削除
+max_palette = max_palette.drop(['index'], axis=1)
+train_test = pd.merge(train_test, max_palette, on='object_id', how='left')
 
-# exit()
+# 平均のrgb、hsvを取得
+mean_palette = palette_df.copy()
+for c in ['color_r','color_g','color_b','color_h','color_s','color_v']:
+    mean_palette[c] = palette_df['ratio'] * palette_df[c]
+mean_palette = mean_palette.groupby('object_id').sum().reset_index().rename(
+    columns={'color_r':'mean_palette_r', 'color_g':'mean_palette_g','color_b':'mean_palette_b',
+            'color_h':'mean_palette_h', 'color_s':'mean_palette_s','color_v':'mean_palette_v'})
+train_test = pd.merge(train_test, mean_palette, on='object_id', how='left')
+
 
 # 作品がどのような形式であるか
 # クロス集計表にデータを成型してマージ
