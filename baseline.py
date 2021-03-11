@@ -32,7 +32,7 @@ custom_stopwords = nltk.corpus.stopwords.words('dutch') + nltk.corpus.stopwords.
 
 plt.rcParams["font.family"] = "IPAexGothic"
 
-N_SPLITS    = 5
+N_SPLITS    = 10
 RANDOM_SEED = 72
 
 
@@ -163,10 +163,16 @@ print(train.shape, test.shape, train_test.shape) # (12026, 19) (12008, 18) (2403
 
 
 # text features
+transformer = TruncatedSVD(n_components=64, random_state=RANDOM_SEED)
 for c in ['title', 'description', 'long_title']:
     for name in ['en','nl','ex']:
         _df = pd.read_csv(f'./features/texts_lang/{c}_{name}_feature.csv')
-        _df = _df.drop(['Unnamed: 0'], axis=1)
+        feature = transformer.fit_transform(_df.drop(['Unnamed: 0','object_id'], axis=1))
+
+        num_p = feature.shape[1]
+        feature = pd.DataFrame(feature, columns=[f'{c}_{name}{num_p}_{i:03}' for i in range(num_p)])
+        _df = pd.concat([_df['object_id'], feature], axis=1)
+        
         train_test = pd.merge(train_test, _df, on='object_id', how='left')
 print(train_test.shape)
 
@@ -465,6 +471,8 @@ for axis in ['h', 'w', 't', 'd']:
     size_info[column_name] = size_info[column_name].replace('', np.nan).astype(float) # dtypeがobjectになってるのでfloatに直す
     size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
     train_test[column_name] = size_info[column_name] # trainにくっつける
+
+train_test['size_h*t'] = train_test['size_h'] * train_test['size_t']
 
 # # NOTE: 変なもの( h 166mm × w 78/54mm )が混じってて例外処理がいるけどとりあえず延期で
 # print(train_test.iloc[18194][['sub_title', 'size_h', 'size_w', 'size_t', 'size_d']])
