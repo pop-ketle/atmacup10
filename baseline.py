@@ -30,9 +30,9 @@ nltk.download('stopwords')
 # 英語とオランダ語を stopword として指定
 custom_stopwords = nltk.corpus.stopwords.words('dutch') + nltk.corpus.stopwords.words('english')
 
-plt.rcParams["font.family"] = "IPAexGothic"
+plt.rcParams['font.family'] = 'IPAexGothic'
 
-N_SPLITS    = 10
+N_SPLITS    = 5
 RANDOM_SEED = 72
 
 
@@ -145,6 +145,10 @@ technique_df = pd.read_csv('./features/technique.csv')
 
 material_df = pd.read_csv('./features/material.csv')
 
+maker_info_df                 = pd.read_csv('./features/maker.csv')
+principal_maker_df            = pd.read_csv('./features/principal_maker.csv')
+principal_maker_occupation_df = pd.read_csv('./features/principal_maker_occupation.csv')
+
 with open('./features/materials_converter.yml') as f:
     materials_dict = yaml.safe_load(f.read())
 
@@ -175,6 +179,9 @@ for c in ['title', 'description', 'long_title']:
         
         train_test = pd.merge(train_test, _df, on='object_id', how='left')
 print(train_test.shape)
+
+
+###############################
 
 # for c in train.columns:
 #     print(c, len(set(train[c])))
@@ -288,6 +295,19 @@ mean_palette = mean_palette.groupby('object_id').sum().reset_index().rename(
 train_test = pd.merge(train_test, mean_palette, on='object_id', how='left')
 
 
+# 作家情報を追加
+maker_info_df = maker_info_df.add_prefix('principal_maker_').rename(columns={'principal_maker_name': 'principal_maker'})
+train_test = pd.merge(train_test, maker_info_df, on='principal_maker', how='left')
+
+principal_maker_df = pd.merge(principal_maker_df, principal_maker_occupation_df, on='id', how='left')
+principal_maker_df = principal_maker_df.rename(columns={'name': 'work'})
+principal_maker_df['productionPlaces'] = principal_maker_df['productionPlaces'].map({'Liège': 'Liege'})
+
+for c in ['qualification', 'roles', 'productionPlaces', 'work']:
+    # principal_maker_df[c] = principal_maker_df[c].apply(lambda x: x.replace(' ', '_'))
+    _df = pd.crosstab(principal_maker_df['object_id'], principal_maker_df[c]).add_prefix(f'{c}=')
+    train_test = pd.merge(train_test, _df, on='object_id', how='left')
+
 # 作品がどのような形式であるか
 # クロス集計表にデータを成型してマージ
 cross_object_type = pd.crosstab(object_collection_df['object_id'], object_collection_df['name']).add_prefix('object_type=')
@@ -347,15 +367,36 @@ mat_tec = pd.concat([material_df, technique_df], axis=0).reset_index(drop=True)
 col_tec = pd.concat([object_collection_df, technique_df], axis=0).reset_index(drop=True)
 mat_col_tec = pd.concat([material_df, object_collection_df, technique_df], axis=0).reset_index(drop=True)
 
+maker_df = train_test[['object_id','principal_maker']]
+maker_df = maker_df.rename(columns={'principal_maker': 'name'})
+
+maker_mat_col = pd.concat([maker_df, mat_col], axis=0).reset_index(drop=True)
+maker_mat_tec = pd.concat([maker_df, mat_tec], axis=0).reset_index(drop=True)
+maker_col_tec = pd.concat([maker_df, col_tec], axis=0).reset_index(drop=True)
+maker_mat_col_tec = pd.concat([maker_df, mat_col_tec], axis=0).reset_index(drop=True)
+
+person_mat_col = pd.concat([historical_person_df, mat_col], axis=0).reset_index(drop=True)
+person_mat_tec = pd.concat([historical_person_df, mat_tec], axis=0).reset_index(drop=True)
+person_col_tec = pd.concat([historical_person_df, col_tec], axis=0).reset_index(drop=True)
+person_mat_col_tec  = pd.concat([historical_person_df, mat_col_tec], axis=0).reset_index(drop=True)
+
 # 単語ベクトル表現の次元数 NOTE: 元の語彙数をベースに適当に決めました
 model_size = {
-    "material": 20,
-    "technique": 8,
-    "collection": 3,
-    "material_collection": 20,
-    "material_technique": 20,
-    "collection_technique": 10,
-    "material_collection_technique": 25
+    'material': 20,
+    'technique': 8,
+    'collection': 3,
+    'material_collection': 20,
+    'material_technique': 20,
+    'collection_technique': 10,
+    'material_collection_technique': 25,
+    'maker_mat_col': 50,
+    'maker_mat_tec': 50,
+    'maker_col_tec': 50,
+    'maker_mat_col_tec': 50,
+    'person_mat_col': 50,
+    'person_mat_tec': 50,
+    'person_col_tec': 50,
+    'person_mat_col_tec': 50,
 }
 n_iter = 100
 
@@ -363,30 +404,34 @@ w2v_dfs = []
 for df, df_name in zip(
         [
             material_df, object_collection_df, technique_df,
-            mat_col, mat_tec, col_tec, mat_col_tec
+            mat_col, mat_tec, col_tec, mat_col_tec,
+            maker_mat_col, maker_mat_tec, maker_col_tec, maker_mat_col_tec,
+            person_mat_col, person_mat_tec, person_col_tec, person_mat_col_tec,
         ], [
-            "material", "collection", "technique",
-            "material_collection",
-            "material_technique",
-            "collection_technique",
-            "material_collection_technique"
+            'material', 'collection', 'technique',
+            'material_collection',
+            'material_technique',
+            'collection_technique',
+            'material_collection_technique',
+            'maker_mat_col', 'maker_mat_tec', 'maker_col_tec', 'maker_mat_col_tec',
+            'person_mat_col', 'person_mat_tec', 'person_col_tec', 'person_mat_col_tec',
         ]):
-    df_group = df.groupby("object_id")["name"].apply(list).reset_index()
+    df_group = df.groupby('object_id')['name'].apply(list).reset_index()
     # Word2Vecの学習
-    w2v_model = word2vec.Word2Vec(df_group["name"].values.tolist(),
+    w2v_model = word2vec.Word2Vec(df_group['name'].values.tolist(),
                                   size=model_size[df_name],
                                   min_count=1,
                                   window=1,
                                   iter=n_iter)
 
     # 各文章ごとにそれぞれの単語をベクトル表現に直し、平均をとって文章ベクトルにする
-    sentence_vectors = df_group["name"].apply(
+    sentence_vectors = df_group['name'].apply(
         lambda x: np.mean([w2v_model.wv[e] for e in x], axis=0))
     sentence_vectors = np.vstack([x for x in sentence_vectors])
     sentence_vector_df = pd.DataFrame(sentence_vectors,
-                                      columns=[f"{df_name}_w2v_{i}"
+                                      columns=[f'{df_name}_w2v_{i}'
                                                for i in range(model_size[df_name])])
-    sentence_vector_df.index = df_group["object_id"]
+    sentence_vector_df.index = df_group['object_id']
     w2v_dfs.append(sentence_vector_df)
 
 for w2v_df in w2v_dfs:
@@ -435,7 +480,7 @@ train_test = pd.merge(train_test, agg_df, on='principal_maker', how='left')
 # print(sorted_group)
 # exit()
 
-for c in ['title','description','sub_title','long_title','more_title']:
+for c in ['principal_maker','principal_or_first_maker','title','description','sub_title','long_title','more_title']:
     print(c)
     dfs = []
 
@@ -463,6 +508,18 @@ for c in ['title','description','sub_title','long_title','more_title']:
     output_df = pd.concat(dfs, axis=1)
     train_test = pd.concat([train_test, output_df], axis=1)
 
+    # Word2Vecの学習
+    w2v_model = word2vec.Word2Vec(cleansing_hero_only_text(train_test, c), size=64, min_count=1, window=1, iter=100)
+
+    # 各文章ごとにそれぞれの単語をベクトル表現に直し、平均をとって文章ベクトルにする
+    sentence_vectors = cleansing_hero_only_text(train_test, c).apply(
+        lambda x: np.mean([w2v_model.wv[e] for e in x], axis=0))
+    sentence_vectors = np.vstack([x for x in sentence_vectors])
+    sentence_vector_df = pd.DataFrame(sentence_vectors, columns=[f'{c}_w2v_{i}' for i in range(64)])
+    sentence_vector_df.index = train_test['object_id']
+    
+    train_test = pd.merge(train_test, sentence_vector_df, on='object_id', how='left')
+
 # sub_titleから作品のサイズを抽出して単位をmmに統一する
 for axis in ['h', 'w', 't', 'd']:
     column_name = f'size_{axis}'
@@ -472,7 +529,12 @@ for axis in ['h', 'w', 't', 'd']:
     size_info[column_name] = size_info.apply(lambda row: row[column_name] * 10 if row['unit'] == 'cm' else row[column_name], axis=1) # 　単位をmmに統一する
     train_test[column_name] = size_info[column_name] # trainにくっつける
 
-train_test['size_h*t'] = train_test['size_h'] * train_test['size_t']
+
+for c in ['size_h', 'size_w', 'size_t', 'size_d']:
+    train_test[c] = train_test[c].fillna(1.0).astype('float64')
+train_test['size_h*w']     = train_test['size_h'] * train_test['size_w']
+train_test['size_h*w*t']   = train_test['size_h'] * train_test['size_w'] * train_test['size_t']
+train_test['size_h*w*t*d'] = train_test['size_h'] * train_test['size_w'] * train_test['size_t'] * train_test['size_d']
 
 # # NOTE: 変なもの( h 166mm × w 78/54mm )が混じってて例外処理がいるけどとりあえず延期で
 # print(train_test.iloc[18194][['sub_title', 'size_h', 'size_w', 'size_t', 'size_d']])
@@ -547,7 +609,19 @@ def target_encoding(train, test, target_col, y_col):
     train[f'TE_{target_col}'] = tmp
 
 
-cat_cols = ['principal_maker','principal_or_first_maker','copyright_holder','acquisition_method','acquisition_credit_line','title_lang','description_lang','long_title_lang','period','century']
+cat_cols = [
+    'principal_maker',
+    'principal_or_first_maker',
+    'copyright_holder',
+    'acquisition_method',
+    'acquisition_credit_line',
+    'title_lang',
+    'description_lang',
+    'long_title_lang',
+    'period',
+    'century',
+    'principal_maker_nationality',
+]
 
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
