@@ -167,7 +167,7 @@ print(train.shape, test.shape, train_test.shape) # (12026, 19) (12008, 18) (2403
 
 
 # text features
-transformer = TruncatedSVD(n_components=64, random_state=RANDOM_SEED)
+transformer = TruncatedSVD(n_components=128, random_state=RANDOM_SEED)
 for c in ['title', 'description', 'long_title']:
     for name in ['en','nl','ex']:
         _df = pd.read_csv(f'./features/texts_lang/{c}_{name}_feature.csv')
@@ -389,14 +389,14 @@ model_size = {
     'material_technique': 20,
     'collection_technique': 10,
     'material_collection_technique': 25,
-    'maker_mat_col': 50,
-    'maker_mat_tec': 50,
-    'maker_col_tec': 50,
-    'maker_mat_col_tec': 50,
-    'person_mat_col': 50,
-    'person_mat_tec': 50,
-    'person_col_tec': 50,
-    'person_mat_col_tec': 50,
+    'maker_mat_col': 100,
+    'maker_mat_tec': 100,
+    'maker_col_tec': 100,
+    'maker_mat_col_tec': 100,
+    'person_mat_col': 100,
+    'person_mat_tec': 100,
+    'person_col_tec': 100,
+    'person_mat_col_tec': 100,
 }
 n_iter = 100
 
@@ -416,7 +416,37 @@ for df, df_name in zip(
             'maker_mat_col', 'maker_mat_tec', 'maker_col_tec', 'maker_mat_col_tec',
             'person_mat_col', 'person_mat_tec', 'person_col_tec', 'person_mat_col_tec',
         ]):
+
+    dfs = []
+    df_group = df.groupby('object_id')['name'].apply(str).reset_index()
+
+    _df = basic_text_features_transformer(df_group, 'name', cleansing_hero=cleansing_hero_only_text, name=df_name)
+    dfs.append(_df)
+
+    _df = text_vectorizer(df_group,
+                                ['name'],
+                                cleansing_hero=cleansing_hero_only_text,
+                                vectorizer=CountVectorizer(),
+                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+                                name=f'{df_name}_countvec_sdv'
+                                )
+    dfs.append(_df)
+
+    _df = text_vectorizer(df_group,
+                                ['name'],
+                                cleansing_hero=cleansing_hero_only_text,
+                                vectorizer=TfidfVectorizer(),
+                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+                                name=f'{df_name}_tfidf_sdv'
+                                )
+    dfs.append(_df)
+
+    output_df = pd.concat(dfs, axis=1)
+    train_test = pd.concat([train_test, output_df], axis=1)
+
+    
     df_group = df.groupby('object_id')['name'].apply(list).reset_index()
+
     # Word2Vecの学習
     w2v_model = word2vec.Word2Vec(df_group['name'].values.tolist(),
                                   size=model_size[df_name],
@@ -484,7 +514,7 @@ for c in ['principal_maker','principal_or_first_maker','title','description','su
     print(c)
     dfs = []
 
-    _df = basic_text_features_transformer(train_test, c, cleansing_hero=None, name='')
+    _df = basic_text_features_transformer(train_test, c, cleansing_hero=cleansing_hero_only_text, name='')
     dfs.append(_df)
 
     _df = text_vectorizer(train_test,
