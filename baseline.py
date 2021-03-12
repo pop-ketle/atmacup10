@@ -389,14 +389,14 @@ model_size = {
     'material_technique': 20,
     'collection_technique': 10,
     'material_collection_technique': 25,
-    'maker_mat_col': 100,
-    'maker_mat_tec': 100,
-    'maker_col_tec': 100,
-    'maker_mat_col_tec': 100,
-    'person_mat_col': 100,
-    'person_mat_tec': 100,
-    'person_col_tec': 100,
-    'person_mat_col_tec': 100,
+    'maker_mat_col': 50,
+    'maker_mat_tec': 50,
+    'maker_col_tec': 50,
+    'maker_mat_col_tec': 50,
+    'person_mat_col': 50,
+    'person_mat_tec': 50,
+    'person_col_tec': 50,
+    'person_mat_col_tec': 75,
 }
 n_iter = 100
 
@@ -417,32 +417,32 @@ for df, df_name in zip(
             'person_mat_col', 'person_mat_tec', 'person_col_tec', 'person_mat_col_tec',
         ]):
 
-    dfs = []
-    df_group = df.groupby('object_id')['name'].apply(str).reset_index()
+    # dfs = []
+    # df_group = df.groupby('object_id')['name'].apply(str).reset_index()
 
-    _df = basic_text_features_transformer(df_group, 'name', cleansing_hero=cleansing_hero_only_text, name=df_name)
-    dfs.append(_df)
+    # _df = basic_text_features_transformer(df_group, 'name', cleansing_hero=cleansing_hero_only_text, name=df_name)
+    # dfs.append(_df)
 
-    _df = text_vectorizer(df_group,
-                                ['name'],
-                                cleansing_hero=cleansing_hero_only_text,
-                                vectorizer=CountVectorizer(),
-                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
-                                name=f'{df_name}_countvec_sdv'
-                                )
-    dfs.append(_df)
+    # _df = text_vectorizer(df_group,
+    #                             ['name'],
+    #                             cleansing_hero=cleansing_hero_only_text,
+    #                             vectorizer=CountVectorizer(),
+    #                             transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+    #                             name=f'{df_name}_countvec_sdv'
+    #                             )
+    # dfs.append(_df)
 
-    _df = text_vectorizer(df_group,
-                                ['name'],
-                                cleansing_hero=cleansing_hero_only_text,
-                                vectorizer=TfidfVectorizer(),
-                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
-                                name=f'{df_name}_tfidf_sdv'
-                                )
-    dfs.append(_df)
+    # _df = text_vectorizer(df_group,
+    #                             ['name'],
+    #                             cleansing_hero=cleansing_hero_only_text,
+    #                             vectorizer=TfidfVectorizer(),
+    #                             transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+    #                             name=f'{df_name}_tfidf_sdv'
+    #                             )
+    # dfs.append(_df)
 
-    output_df = pd.concat(dfs, axis=1)
-    train_test = pd.concat([train_test, output_df], axis=1)
+    # output_df = pd.concat(dfs, axis=1)
+    # train_test = pd.concat([train_test, output_df], axis=1)
 
     
     df_group = df.groupby('object_id')['name'].apply(list).reset_index()
