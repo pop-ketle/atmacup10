@@ -669,40 +669,54 @@ lgbm_oof_pred, lgbm_models, lgbm_scores = make_prediction(train, y,
                                                         model_name='lgbm',
                                                         logarithmic=True)
 
-scores = lgbm_scores
-score  = sum(scores) / len(scores)
-print(scores)
-print(f'cv: {score}')
-
-# cat_oof_pred, cat_models, cat_scores = make_prediction(train, y,
-#                                                         skf.split(train, y),
-#                                                         CatBoostRegressor(),
-#                                                         model_name='catboost',
-#                                                         logarithmic=True)
-
-# scores = lgbm_scores + cat_scores
+# scores = lgbm_scores
 # score  = sum(scores) / len(scores)
 # print(scores)
 # print(f'cv: {score}')
 
+cat_oof_pred, cat_models, cat_scores = make_prediction(train, y,
+                                                        skf.split(train, y),
+                                                        CatBoostRegressor(),
+                                                        model_name='catboost',
+                                                        logarithmic=True)
 
-# X2 = np.stack([lgbm_oof_pred, cat_oof_pred])
-# X2 = X2.T
-# X2 = pd.DataFrame(X2, columns=[i for i in range(X2.shape[-1])])
-# print(X2.shape)
-
-# ridge_oof_pred, ridge_models, ridge_scores = make_prediction(X2, y,
-#                                                         skf.split(X2, y),
-#                                                         Ridge(),
-#                                                         model_name='ridge',
-#                                                         logarithmic=True)
-# score  = sum(ridge_scores) / len(ridge_scores)
-# print(ridge_scores)
-# print(f'cv: {score}')
+scores = lgbm_scores + cat_scores
+score  = sum(scores) / len(scores)
+print(scores)
+print(f'cv: {score}')
 
 
+X2 = np.stack([lgbm_oof_pred, cat_oof_pred])
+X2 = X2.T
+X2 = pd.DataFrame(X2, columns=[i for i in range(X2.shape[-1])])
+print(X2.shape)
 
-pred = np.array([model.predict(test) for model in lgbm_models])
+ridge_oof_pred, ridge_models, ridge_scores = make_prediction(X2, y,
+                                                        skf.split(X2, y),
+                                                        Ridge(),
+                                                        model_name='ridge',
+                                                        logarithmic=True)
+score  = sum(ridge_scores) / len(ridge_scores)
+print(ridge_scores)
+print(f'cv: {score}')
+
+
+
+# pred = np.array([model.predict(test) for model in lgbm_models])
+# pred = np.mean(pred, axis=0)
+# pred = np.expm1(pred)
+# pred = np.where(pred < 0, 0, pred)
+
+test2 = []
+lgbm_pred = np.array([model.predict(test) for model in lgbm_models])
+cat_pred  = np.array([model.predict(test) for model in cat_models])
+test2.append(np.mean(lgbm_pred, axis=0))
+test2.append(np.mean(cat_pred, axis=0))
+test2 = np.array(test2)
+test2 = test2.T
+print(f'test2.shape={test2.shape}')
+
+pred = np.array([model.predict(test2) for model in ridge_models])
 pred = np.mean(pred, axis=0)
 pred = np.expm1(pred)
 pred = np.where(pred < 0, 0, pred)
