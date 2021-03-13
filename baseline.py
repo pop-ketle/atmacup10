@@ -34,8 +34,8 @@ custom_stopwords = nltk.corpus.stopwords.words('dutch') + nltk.corpus.stopwords.
 
 plt.rcParams['font.family'] = 'IPAexGothic'
 
-N_SPLITS    = 10
-RANDOM_SEED = 72
+N_SPLITS    = 5
+RANDOM_SEED = 313
 
 
 def cleansing_hero_only_text(input_df, text_col):
@@ -745,23 +745,23 @@ lgbm_params = {
     'random_state': RANDOM_SEED,
 }
 
-# boruta
-X = train.copy()
-X = X.fillna(-999)
-model = lgbm.LGBMRegressor(**lgbm_params)
-feat_selector = BorutaPy(model, n_estimators='auto', verbose=2, random_state=RANDOM_SEED)
-feat_selector.fit(X.values, y.values)
+# # boruta
+# X = train.copy()
+# X = X.fillna(-999)
+# model = lgbm.LGBMRegressor(**lgbm_params)
+# feat_selector = BorutaPy(model, n_estimators='auto', verbose=2, random_state=RANDOM_SEED)
+# feat_selector.fit(X.values, y.values)
 
-# 選択された特徴量を確認
-selected = feat_selector.support_
-print('選択された特徴量の数: %d' % np.sum(selected))
+# # 選択された特徴量を確認
+# selected = feat_selector.support_
+# print('選択された特徴量の数: %d' % np.sum(selected))
 
-print(selected)
-print(train.columns[selected])
+# print(selected)
+# print(train.columns[selected])
 
-train = train[train.columns[selected]]
-test  = test[test.columns[selected]]
-print(train.shape, y.shape, test.shape)
+# train = train[train.columns[selected]]
+# test  = test[test.columns[selected]]
+# print(train.shape, y.shape, test.shape)
 
 
 skf = StratifiedKFold(n_splits=N_SPLITS, random_state=RANDOM_SEED, shuffle=True)
