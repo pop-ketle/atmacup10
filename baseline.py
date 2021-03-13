@@ -321,7 +321,7 @@ train_test['n_historical_person'] = train_test['n_historical_person'].fillna(0)
 
 train_test['exist_historical_person'] = np.where(train_test['n_historical_person']>=1, 1, 0)
 
-# NOTE: lightgbm.basic.LightGBMError: Do not support special JSON characters in feature name.
+# # NOTE: lightgbm.basic.LightGBMError: Do not support special JSON characters in feature name.
 # # クロス集計表にデータを成型してマージ
 # vc = historical_person_df['name'].value_counts()
 
@@ -331,6 +331,10 @@ train_test['exist_historical_person'] = np.where(train_test['n_historical_person
 # # isin で 30 回以上でてくるようなレコードに絞り込んでから corsstab を行なう
 # idx = historical_person_df['name'].isin(use_names)
 # _use_df = historical_person_df[idx].reset_index(drop=True)
+# # NOTE: 正規表現の方がいいだろうけど
+# _use_df['name'] = _use_df['name'].str.strip('(')
+# _use_df['name'] = _use_df['name'].str.strip(')')
+
 # cross_historical_person = pd.crosstab(_use_df['object_id'], _use_df['name']).add_prefix('historical_person=')
 # train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
 
@@ -677,20 +681,30 @@ def target_encoding(train, test, target_col, y_col):
     train[f'TE_{target_col}'] = tmp
 
 
-# cat_cols = [
-#     'principal_maker',
-#     'principal_or_first_maker',
-#     'copyright_holder',
-#     'acquisition_method',
-#     'acquisition_credit_line',
-#     'title_lang',
-#     'description_lang',
-#     'long_title_lang',
-#     'period',
-#     'century',
-#     'principal_maker_nationality',
-# ]
-cat_cols = train_test.select_dtypes(include=object).columns.tolist()
+cat_cols = [
+    'principal_maker',
+    'principal_or_first_maker',
+    'copyright_holder',
+    'acquisition_date',
+    'acquisition_method',
+    'acquisition_credit_line',
+    'title',
+    'sub_title',
+    'more_title',
+    'long_title',
+    'description',
+    'title_lang',
+    'description_lang',
+    'long_title_lang',
+    'dating_presenting_date',
+    'period',
+    'century',
+    'principal_maker_nationality',
+    'principal_maker_date_of_death',
+    'principal_maker_date_of_birth',
+
+]
+# cat_cols = train_test.select_dtypes(include=object).columns.tolist()
 
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
