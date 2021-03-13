@@ -7,6 +7,7 @@ import pandas as pd
 from tqdm import tqdm
 import texthero as hero
 import lightgbm as lgbm
+from boruta import BorutaPy
 import seaborn as sns
 import matplotlib.pyplot as plt
 from fasttext import load_model
@@ -681,30 +682,29 @@ def target_encoding(train, test, target_col, y_col):
     train[f'TE_{target_col}'] = tmp
 
 
-cat_cols = [
-    'principal_maker',
-    'principal_or_first_maker',
-    'copyright_holder',
-    'acquisition_date',
-    'acquisition_method',
-    'acquisition_credit_line',
-    'title',
-    'sub_title',
-    'more_title',
-    'long_title',
-    'description',
-    'title_lang',
-    'description_lang',
-    'long_title_lang',
-    'dating_presenting_date',
-    'period',
-    'century',
-    'principal_maker_nationality',
-    'principal_maker_date_of_death',
-    'principal_maker_date_of_birth',
-
-]
-# cat_cols = train_test.select_dtypes(include=object).columns.tolist()
+# cat_cols = [
+#     'principal_maker',
+#     'principal_or_first_maker',
+#     'copyright_holder',
+#     'acquisition_date',
+#     'acquisition_method',
+#     'acquisition_credit_line',
+#     'title',
+#     'sub_title',
+#     'more_title',
+#     'long_title',
+#     'description',
+#     'title_lang',
+#     'description_lang',
+#     'long_title_lang',
+#     'dating_presenting_date',
+#     'period',
+#     'century',
+#     'principal_maker_nationality',
+#     'principal_maker_date_of_death',
+#     'principal_maker_date_of_birth',
+# ]
+cat_cols = train_test.select_dtypes(include=object).columns.tolist()
 
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
@@ -744,6 +744,25 @@ lgbm_params = {
     'importance_type': 'gain', # 特徴重要度計算のロジック(後述)
     'random_state': RANDOM_SEED,
 }
+
+# boruta
+X = train.copy()
+X = X.fillna(-999)
+model = lgbm.LGBMRegressor(**lgbm_params)
+feat_selector = BorutaPy(model, n_estimators='auto', verbose=2, random_state=RANDOM_SEED)
+feat_selector.fit(X.values, y.values)
+
+# 選択された特徴量を確認
+selected = feat_selector.support_
+print('選択された特徴量の数: %d' % np.sum(selected))
+
+print(selected)
+print(train.columns[selected])
+
+train = train[train.columns[selected]]
+test  = test[test.columns[selected]]
+print(train.shape, y.shape, test.shape)
+
 
 skf = StratifiedKFold(n_splits=N_SPLITS, random_state=RANDOM_SEED, shuffle=True)
 
