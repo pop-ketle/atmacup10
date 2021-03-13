@@ -35,7 +35,7 @@ custom_stopwords = nltk.corpus.stopwords.words('dutch') + nltk.corpus.stopwords.
 plt.rcParams['font.family'] = 'IPAexGothic'
 
 N_SPLITS    = 5
-RANDOM_SEED = 313
+RANDOM_SEED = 72
 
 
 def cleansing_hero_only_text(input_df, text_col):
@@ -340,10 +340,10 @@ train_test['exist_historical_person'] = np.where(train_test['n_historical_person
 # train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
 
 # NOTE: 若干CV落ちたのでパス
-# # どのような技法で描かれたか
-# # クロス集計表にデータを成型してマージ
-# cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
-# train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
+# どのような技法で描かれたか
+# クロス集計表にデータを成型してマージ
+cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
+train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
 
 # 'object_id'の出現回数を特徴量へ
 place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
