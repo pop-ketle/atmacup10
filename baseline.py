@@ -677,19 +677,20 @@ def target_encoding(train, test, target_col, y_col):
     train[f'TE_{target_col}'] = tmp
 
 
-cat_cols = [
-    'principal_maker',
-    'principal_or_first_maker',
-    'copyright_holder',
-    'acquisition_method',
-    'acquisition_credit_line',
-    'title_lang',
-    'description_lang',
-    'long_title_lang',
-    'period',
-    'century',
-    'principal_maker_nationality',
-]
+# cat_cols = [
+#     'principal_maker',
+#     'principal_or_first_maker',
+#     'copyright_holder',
+#     'acquisition_method',
+#     'acquisition_credit_line',
+#     'title_lang',
+#     'description_lang',
+#     'long_title_lang',
+#     'period',
+#     'century',
+#     'principal_maker_nationality',
+# ]
+cat_cols = train_test.select_dtypes(include=object).columns.tolist()
 
 for c in cat_cols:
     train_test = count_encoding(train_test, c)
