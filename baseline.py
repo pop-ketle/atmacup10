@@ -1,6 +1,7 @@
 import yaml
 import nltk
 import colorsys
+import itertools
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -370,25 +371,49 @@ mat_col_tec = pd.concat([material_df, object_collection_df, technique_df], axis=
 maker_df = train_test[['object_id','principal_maker']]
 maker_df = maker_df.rename(columns={'principal_maker': 'name'})
 
+maker_mat    = pd.concat([maker_df, material_df], axis=0).reset_index(drop=True)
+maker_col    = pd.concat([maker_df, object_collection_df], axis=0).reset_index(drop=True)
+maker_tec    = pd.concat([maker_df, technique_df], axis=0).reset_index(drop=True)
+maker_person = pd.concat([maker_df, historical_person_df], axis=0).reset_index(drop=True)
+
 maker_mat_col = pd.concat([maker_df, mat_col], axis=0).reset_index(drop=True)
 maker_mat_tec = pd.concat([maker_df, mat_tec], axis=0).reset_index(drop=True)
 maker_col_tec = pd.concat([maker_df, col_tec], axis=0).reset_index(drop=True)
 maker_mat_col_tec = pd.concat([maker_df, mat_col_tec], axis=0).reset_index(drop=True)
+
+person_mat    = pd.concat([historical_person_df, material_df], axis=0).reset_index(drop=True)
+person_col    = pd.concat([historical_person_df, object_collection_df], axis=0).reset_index(drop=True)
+person_tec    = pd.concat([historical_person_df, technique_df], axis=0).reset_index(drop=True)
 
 person_mat_col = pd.concat([historical_person_df, mat_col], axis=0).reset_index(drop=True)
 person_mat_tec = pd.concat([historical_person_df, mat_tec], axis=0).reset_index(drop=True)
 person_col_tec = pd.concat([historical_person_df, col_tec], axis=0).reset_index(drop=True)
 person_mat_col_tec  = pd.concat([historical_person_df, mat_col_tec], axis=0).reset_index(drop=True)
 
+maker_person_mat = pd.concat([maker_df, person_mat], axis=0).reset_index(drop=True)
+maker_person_col = pd.concat([maker_df, person_col], axis=0).reset_index(drop=True)
+maker_person_tec = pd.concat([maker_df, person_tec], axis=0).reset_index(drop=True)
+
+maker_person_mat_col_tec = pd.concat([maker_person, mat_col_tec], axis=0).reset_index(drop=True)
+
 # 単語ベクトル表現の次元数 NOTE: 元の語彙数をベースに適当に決めました
 model_size = {
     'material': 20,
     'technique': 8,
     'collection': 3,
+    'maker': 50,
+    'person': 50,
     'material_collection': 20,
     'material_technique': 20,
     'collection_technique': 10,
     'material_collection_technique': 25,
+    'maker_materianl': 50,
+    'makert_collection': 50,
+    'maker_technique': 50,
+    'maker_person': 75,
+    'person_materianl': 50, 
+    'person_collection': 50, 
+    'person_technique': 50,
     'maker_mat_col': 50,
     'maker_mat_tec': 50,
     'maker_col_tec': 50,
@@ -397,6 +422,10 @@ model_size = {
     'person_mat_tec': 50,
     'person_col_tec': 50,
     'person_mat_col_tec': 75,
+    'maker_person_mat': 100,
+    'maker_person_col': 100,
+    'maker_person_tec': 100,
+    'maker_person_mat_col_tec': 125,
 }
 n_iter = 100
 
@@ -404,17 +433,26 @@ w2v_dfs = []
 for df, df_name in zip(
         [
             material_df, object_collection_df, technique_df,
-            mat_col, mat_tec, col_tec, mat_col_tec,
+            maker_df, historical_person_df,
+            mat_col, mat_tec, col_tec,
+            maker_mat ,maker_col, maker_tec, maker_person,
+            person_mat, person_col, person_tec,
+            mat_col_tec,
             maker_mat_col, maker_mat_tec, maker_col_tec, maker_mat_col_tec,
             person_mat_col, person_mat_tec, person_col_tec, person_mat_col_tec,
+            maker_person_mat, maker_person_col, maker_person_tec,
+            maker_person_mat_col_tec,
         ], [
             'material', 'collection', 'technique',
-            'material_collection',
-            'material_technique',
-            'collection_technique',
+            'maker', 'person',
+            'material_collection', 'material_technique', 'collection_technique',
+            'maker_materianl', 'makert_collection', 'maker_technique', 'maker_person',
+            'person_materianl', 'person_collection', 'person_technique',
             'material_collection_technique',
             'maker_mat_col', 'maker_mat_tec', 'maker_col_tec', 'maker_mat_col_tec',
             'person_mat_col', 'person_mat_tec', 'person_col_tec', 'person_mat_col_tec',
+            'maker_person_mat', 'maker_person_col', 'maker_person_tec',
+            'maker_person_mat_col_tec',
         ]):
 
     # dfs = []
@@ -667,6 +705,7 @@ for c in cat_cols:
 
 
 obj_col = train_test.select_dtypes(include=object).columns.tolist()
+print(obj_col)
 for c in obj_col:
     train = train.drop(c, axis=1)
     test  = test.drop(c, axis=1)
