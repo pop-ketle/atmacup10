@@ -33,7 +33,7 @@ custom_stopwords = nltk.corpus.stopwords.words('dutch') + nltk.corpus.stopwords.
 
 plt.rcParams['font.family'] = 'IPAexGothic'
 
-N_SPLITS    = 5
+N_SPLITS    = 10
 RANDOM_SEED = 72
 
 
