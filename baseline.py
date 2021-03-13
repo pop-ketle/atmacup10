@@ -339,11 +339,11 @@ train_test['exist_historical_person'] = np.where(train_test['n_historical_person
 # cross_historical_person = pd.crosstab(_use_df['object_id'], _use_df['name']).add_prefix('historical_person=')
 # train_test = pd.merge(train_test, cross_historical_person, on='object_id', how='left')
 
-# NOTE: 若干CV落ちたのでパス
-# どのような技法で描かれたか
-# クロス集計表にデータを成型してマージ
-cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
-train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
+# # NOTE: 若干CV落ちたのでパス
+# # どのような技法で描かれたか
+# # クロス集計表にデータを成型してマージ
+# cross_technique = pd.crosstab(technique_df['object_id'], technique_df['name']).add_prefix('technique=')
+# train_test = pd.merge(train_test, cross_technique, on='object_id', how='left')
 
 # 'object_id'の出現回数を特徴量へ
 place_counts = production_place['object_id'].value_counts().reset_index().rename(columns={'index': 'object_id', 'object_id': 'n_place'})
@@ -578,6 +578,27 @@ for c in ['principal_maker','principal_or_first_maker','title','description','su
                                 )
     dfs.append(_df)
 
+    _df = basic_text_features_transformer(train_test, c, cleansing_hero=None, name='no_cleansing_')
+    dfs.append(_df)
+
+    _df = text_vectorizer(train_test,
+                                [c],
+                                cleansing_hero=None,
+                                vectorizer=CountVectorizer(),
+                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+                                name=f'{c}_no_cleansing_countvec_sdv'
+                                )
+    dfs.append(_df)
+
+    _df = text_vectorizer(train_test,
+                                [c],
+                                cleansing_hero=None,
+                                vectorizer=TfidfVectorizer(),
+                                transformer=TruncatedSVD(n_components=64, random_state=RANDOM_SEED),
+                                name=f'{c}_no_cleansing_tfidf_sdv'
+                                )
+    dfs.append(_df)
+
     output_df = pd.concat(dfs, axis=1)
     train_test = pd.concat([train_test, output_df], axis=1)
 
@@ -589,6 +610,17 @@ for c in ['principal_maker','principal_or_first_maker','title','description','su
         lambda x: np.mean([w2v_model.wv[e] for e in x], axis=0))
     sentence_vectors = np.vstack([x for x in sentence_vectors])
     sentence_vector_df = pd.DataFrame(sentence_vectors, columns=[f'{c}_w2v_{i}' for i in range(64)])
+    sentence_vector_df.index = train_test['object_id']
+    
+    train_test = pd.merge(train_test, sentence_vector_df, on='object_id', how='left')
+
+    w2v_model = word2vec.Word2Vec(train_test[c], size=64, min_count=1, window=1, iter=100)
+
+    # 各文章ごとにそれぞれの単語をベクトル表現に直し、平均をとって文章ベクトルにする
+    sentence_vectors = train_test[c].apply(
+        lambda x: np.mean([w2v_model.wv[e] for e in x], axis=0))
+    sentence_vectors = np.vstack([x for x in sentence_vectors])
+    sentence_vector_df = pd.DataFrame(sentence_vectors, columns=[f'{c}_no_cleansing_w2v_{i}' for i in range(64)])
     sentence_vector_df.index = train_test['object_id']
     
     train_test = pd.merge(train_test, sentence_vector_df, on='object_id', how='left')
